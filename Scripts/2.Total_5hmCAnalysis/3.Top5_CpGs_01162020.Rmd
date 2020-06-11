@@ -1,0 +1,204 @@
+---
+title: "1.Top5CpGs"
+author: "nasim"
+date: "12/5/2019"
+output: html_document
+---
+
+
+setwd("/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS")
+#Load the processed Betas w/o sex chromosomes and cross reactive probes
+load("./Files/01142020_PCNS_MethOxy_GoodProbes.RData")
+ 
+#load metadata
+targets <- read.csv("./Files/Metadata_complete.csv", stringsAsFactors = FALSE)
+
+```{r}
+
+#Exploration of Data
+library(tidyverse)
+library(matrixStats)
+```
+
+
+
+
+
+
+```{r}
+#Need to Subset for Tumors Only
+#Since targets has duplicates for BS and OxBS samples, want to subset for just ArrayID used in my betas file
+rownames(targets) <- targets$ArrayID
+targets <- targets[colnames(PCNS_5hmc),]
+
+#create separate subsets of tumor samples
+TumorTargets <- targets %>% filter(Tumor_Type != "Non-Tumor")
+PCNS_5hmc_Tumor <- PCNS_5hmc[colnames(PCNS_5hmc) %in% TumorTargets$ArrayID]
+
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5hmc_Tumor) <-TumorTargets$Label.ID.[match(names(PCNS_5hmc_Tumor),TumorTargets$ArrayID)]
+```
+
+```{r}
+#Need to subset out the serial samples (patients that have had multiple operations)
+#This could potentially affect the medians/means
+serials <- c("PCNS0302X","PCNS0602X", "PCNS0603X")
+multiregional <- c("PCNS1001A", "PCNS0301B", "PCNS0301C", "PCNS0601B", "PCNS0901B", "PCNS1901C")
+
+tumor_5hmc_noserials <- PCNS_5hmc_Tumor[,!colnames(PCNS_5hmc_Tumor) %in% serials]
+
+#Need to subset out multiregional samples
+#Will subset out arachnoid metastasis for Patient PCNS10 (ID = PCNS1001A)
+#For others, will select cassette X or A if former not available (note for PCNS19, this is the sample with the lower 5hmc value)
+#This is an arbitrary method
+tumor_5hmc_unique <- tumor_5hmc_noserials[,!colnames(tumor_5hmc_noserials) %in% multiregional]
+```
+
+```{r}
+#Repeat subsetting for 5mC to find unique individuals
+#Need to Subset for Tumors Only
+#create separate subsets of tumor samples in 5mC file
+PCNS_5mc_Tumor <- PCNS_5mc[colnames(PCNS_5mc) %in% TumorTargets$ArrayID]
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5mc_Tumor) <-TumorTargets$Label.ID.[match(names(PCNS_5mc_Tumor),TumorTargets$ArrayID)]
+#remove serial and multiregional samples
+tumor_5mc_unique <- PCNS_5mc_Tumor[,!colnames(PCNS_5mc_Tumor) %in% c(serials,multiregional)]
+```
+
+```{r}
+#Repeat  for unmetylated cytosines
+#Need to Subset for Tumors Only
+PCNS_5c_Tumor <- PCNS_5c[colnames(PCNS_5c) %in% TumorTargets$ArrayID]
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5c_Tumor) <-TumorTargets$Label.ID.[match(names(PCNS_5c_Tumor),TumorTargets$ArrayID)]
+#remove serial and multiregional samples
+tumor_5c_unique <- PCNS_5c_Tumor[,!colnames(PCNS_5c_Tumor) %in% c(serials,multiregional)]
+```
+
+```{r}
+#Save the data frame with unique individual data
+save(list=c("tumor_5hmc_unique", "tumor_5mc_unique", "tumor_5c_unique"), file="/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Files/01162020_unique_tumor_betas.RData", compress=TRUE)
+
+```
+
+
+```{r}
+#Now use this dataframe to find the median of all the CpG Beta Values in 5hmc data
+median_5hmc_unique <- apply(tumor_5hmc_unique, 1, median, na.rm=TRUE)
+mean_5hmc_unique <- apply(tumor_5hmc_unique, 1, mean, na.rm=TRUE)
+sd_5hmc_unique <- apply(tumor_5hmc_unique, 1, sd, na.rm=TRUE)
+
+#SS= summary stats
+hydroxy_unique_ss <- data.frame(names(median_5hmc_unique),median_5hmc_unique, mean_5hmc_unique, sd_5hmc_unique, stringsAsFactors = FALSE)
+rownames(hydroxy_unique_ss) <- NULL
+colnames(hydroxy_unique_ss) = c("ID", "Median_5hmC", "Mean_5hmC", "SD")
+
+ordered_unique <- hydroxy_unique_ss %>% arrange(Median_5hmC)
+frac <- nrow(ordered_unique)*0.05
+top5unique <- ordered_unique %>% top_frac(0.05, ordered_unique$Median_5hmC)
+
+#can confirm this with methods in 1.5hmc_top5_methods
+save(list=c("top5unique"), file="/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Files/01162020_top5_5hmc_unique.RData", compress=TRUE)
+```
+
+```{r}
+#Create dataframe with 5mc mean/median values
+median_5mc_unique <- apply(tumor_5mc_unique, 1, median, na.rm=TRUE)
+mean_5mc_unique <- apply(tumor_5mc_unique, 1, mean, na.rm=TRUE)
+sd_5mc_unique <- apply(tumor_5mc_unique, 1, sd, na.rm=TRUE)
+
+
+methyl_unique_ss <- data.frame(names(median_5mc_unique),median_5mc_unique, mean_5mc_unique, sd_5mc_unique, stringsAsFactors = FALSE)
+rownames(methyl_unique_ss) <- NULL
+colnames(methyl_unique_ss) = c("ID", "Median_5mC", "Mean_5mC", "SD_5mC")
+
+```
+
+```{r}
+#save the file with 5mc and 5hmc summary stats :)
+save(list=c("methyl_unique_ss", "hydroxy_unique_ss"), file="/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Files/01162020_unique_hydroxy_methyl_ss.RData", compress=TRUE)
+```
+
+
+
+```{r}
+#Now Repeat for Controls
+#create separate subsets of control samples 5hmc data
+CtlTargets <- targets %>% filter(Tumor_Type == "Non-Tumor")
+#Exclude sample that was deemed to be too abnormal in preliminary analysis (fetal hydrops)
+CtlTargets <- CtlTargets[-4,]
+PCNS_5hmc_Ctl <- PCNS_5hmc[colnames(PCNS_5hmc) %in% CtlTargets$ArrayID]
+
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5hmc_Ctl) <-CtlTargets$Label.ID.[match(names(PCNS_5hmc_Ctl),CtlTargets$ArrayID)]
+```
+
+```{r}
+#Now Repeat for Controls
+#create separate subsets of control samples 5mc data
+PCNS_5mc_Ctl <- PCNS_5mc[colnames(PCNS_5mc) %in% CtlTargets$ArrayID]
+
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5mc_Ctl) <-CtlTargets$Label.ID.[match(names(PCNS_5mc_Ctl),CtlTargets$ArrayID)]
+```
+
+```{r}
+#Now use this dataframe to find the median of all the CpG Beta Values in 5hmc data
+median_5hmc_ctl <- apply(PCNS_5hmc_Ctl, 1, median, na.rm=TRUE)
+mean_5hmc_ctl <- apply(PCNS_5hmc_Ctl, 1, mean, na.rm=TRUE)
+sd_5hmc_ctl <- apply(PCNS_5hmc_Ctl, 1, sd, na.rm=TRUE)
+
+median_5mc_ctl <- apply(PCNS_5mc_Ctl, 1, median, na.rm=TRUE)
+mean_5mc_ctl <- apply(PCNS_5mc_Ctl, 1, mean, na.rm=TRUE)
+sd_5mc_ctl <- apply(PCNS_5mc_Ctl, 1, sd, na.rm=TRUE)
+
+ctl_ss <- data.frame(names(median_5hmc_ctl),median_5hmc_ctl, mean_5hmc_ctl, sd_5hmc_ctl, median_5mc_ctl, mean_5mc_ctl, sd_5mc_ctl, stringsAsFactors = FALSE)
+rownames(ctl_ss) <- NULL
+colnames(ctl_ss) = c("ID", "Ctl_Median_5hmC", "Ctl_Mean_5hmC", "Ctl_SD_5hmC", "Ctl_Median_5mC", "Ctl_Mean_5mC", "Ctl_SD_5mC")
+
+save(list="ctl_ss", file="/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Files/01162020_ctl_ss.RData", compress=TRUE)
+```
+
+
+
+```{r}
+#DID NOT REPEAT THIS WITH NEW SUBSETED DATA BECAUSE I Don't plan to use this in my manuscript
+
+
+
+
+
+
+
+#Repeat Meghan's most variable CpG calculation (from which I made the heatmap)
+#this method uses variance estimates for each row in the matrix 
+# ==========================================================================================
+# Identify Most Variable CpGs
+# ==========================================================================================
+betas <- tumor_5hmc_unique
+# Ensure beta values and covariate data are in same order
+all(colnames(betas) == row.names(targets))
+# Calculate variable of each CpG across all samples (all subjects, all tissue types)
+library(matrixStats)
+betas <- data.matrix(betas)
+CpG_Var <- matrixStats::rowVars(betas, na.rm=TRUE)
+rankVar <- data.frame('order' = rank(-CpG_Var),'var' = CpG_Var)
+rankVar$top10000 <- ifelse(rankVar$order <= 10000,'Yes','No')
+ggpubr::ggscatter(rankVar,x = 'order',y = 'var',color = 'top10000',palette = c('black','red'))
+# Get rank of CpGs by
+rankvar = rank(-CpG_Var)
+# top 10,000 cpgs
+data.topvar <- betas[rankVar$top10000 == 'Yes',]
+data.topvar <- as.matrix(data.topvar)
+
+
+```
+
+```{r}
+#Find least variable CpGs
+betas2 <- as.data.frame(betas)
+betas2 <- betas2 %>% mutate(rowvars = matrixStats::rowVars(betas, na.rm=TRUE))
+betas2 <- betas2 %>% arrange(rowvars)
+bottomVars <- betas2 %>% top_frac(-0.05, rowvars)
+```
+

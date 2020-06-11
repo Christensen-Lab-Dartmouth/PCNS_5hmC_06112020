@@ -1,0 +1,205 @@
+---
+title: "total_meth_visualization"
+author: "nasim"
+date: "11/19/2019"
+output: html_document
+---
+
+setwd("/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS")
+
+
+
+rm(list = ls())
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(wesanderson)
+
+# methylation data 
+load("./Files/01142020_PCNS_MethOxy_GoodProbes.RData")
+targets <- read.csv("./Files/Metadata_complete.csv", stringsAsFactors = FALSE)
+
+
+```{r}
+#Since metadata (targets) has duplicates for BS and OxBS samples, want to subset for just ArrayID used in my betas file
+rownames(targets) <- targets$ArrayID
+targets <- targets[colnames(PCNS_5hmc),]
+
+
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5hmc) <- targets$Label.ID.[match(names(PCNS_5hmc),targets$ArrayID)]
+colnames(PCNS_5mc) <- targets$Label.ID.[match(names(PCNS_5mc),targets$ArrayID)]
+
+#remove repeat samples from individuals
+#Identify serial samples and multiregional samples (patients with more than one sample)
+serials <- c("PCNS0302X","PCNS0602X", "PCNS0603X")
+
+multiregional <- c("PCNS1001A", "PCNS0301B", "PCNS0301C", "PCNS0601B", "PCNS0901B", "PCNS1901C")
+
+#subset out these samples from analysis
+PCNS_5hmc_noserials <- PCNS_5hmc[,!colnames(PCNS_5hmc) %in% serials]
+PCNS_5hmc_unique <- PCNS_5hmc_noserials[,!colnames(PCNS_5hmc_noserials) %in% multiregional]
+dim(PCNS_5hmc_unique)
+colnames(PCNS_5hmc_unique)
+
+#repeat for mC
+PCNS_5mc_noserials <- PCNS_5mc[,!colnames(PCNS_5mc) %in% serials]
+PCNS_5mc_unique <- PCNS_5mc_noserials[,!colnames(PCNS_5mc_noserials) %in% multiregional]
+dim(PCNS_5mc_unique)
+colnames(PCNS_5mc_unique)
+
+```
+
+
+```{r}
+targets <- targets[targets$Label.ID. %in% colnames(PCNS_5hmc_unique), ]
+#Start subsetting for tumor types and controls
+GliomaSamples <- targets %>% filter(Tumor_Type=="Glioma")
+EpendymomaSamples <- targets %>% filter(Tumor_Type=="Ependymoma")
+EmbryonalSamples <- targets %>% filter(Tumor_Type=="Embryonal")
+NonTumorSamples <- targets %>% filter(Tumor_Type=="Non-Tumor")
+
+```
+
+
+```{r}
+# visualize total 5hmC/5mC content across samples 
+#This time ***Remove REPEAT SAMPLES*****
+# Determine the median level of 5hmC/5mC per CpG across all subjects 
+#### hmC
+hydroxy_MD <- apply(PCNS_5hmc_unique, 2, median, na.rm=TRUE)
+hydroxy_MD <- as.data.frame(hydroxy_MD)
+hydroxy_MD <- rownames_to_column(hydroxy_MD, var = "ID")
+
+methly_MD <- apply(PCNS_5mc_unique, 2, median, na.rm=TRUE)
+methly_MD <- as.data.frame(methly_MD)
+methly_MD <- rownames_to_column(methly_MD, var = "ID")
+```
+
+```{r}
+
+#create list of 5hmc medians for per tumor type 
+Glioma5hmc <- hydroxy_MD[hydroxy_MD$ID %in% GliomaSamples$Label.ID.,]
+Glioma5hmc$Type <- "Glioma"
+#Get total median 5hmC 
+GMedian <- median(Glioma5hmc$hydroxy_MD)
+
+Ependymoma5hmc <- hydroxy_MD[hydroxy_MD$ID %in% EpendymomaSamples$Label.ID.,]
+Ependymoma5hmc$Type <- "Ependymoma"
+EpMedian <- median(Ependymoma5hmc$hydroxy_MD)
+
+Embryonal5hmc <- hydroxy_MD[hydroxy_MD$ID %in% EmbryonalSamples$Label.ID.,]
+Embryonal5hmc$Type <- "Embryonal"
+EmbMedian <- median(Embryonal5hmc$hydroxy_MD)
+
+NonTumor5hmc <- hydroxy_MD[hydroxy_MD$ID %in% NonTumorSamples$Label.ID.,]
+#Drop aberrant non-tumor sample
+NonTumor5hmc <- NonTumor5hmc[-4,]
+NonTumor5hmc$Type <- "Non-Tumor"
+CtlMedian <- median(NonTumor5hmc$hydroxy_MD)
+
+
+#create a list of 5mc medians
+Glioma5mc <- methly_MD[methly_MD$ID %in% GliomaSamples$Label.ID.,]
+Glioma5mc$Type <- "Glioma"
+
+Ependymoma5mc <- methly_MD[methly_MD$ID %in% EpendymomaSamples$Label.ID.,]
+Ependymoma5mc$Type <- "Ependymoma"
+
+Embryonal5mc <- methly_MD[methly_MD$ID %in% EmbryonalSamples$Label.ID.,]
+Embryonal5mc$Type <- "Embryonal"
+
+NonTumor5mc <- methly_MD[methly_MD$ID %in% NonTumorSamples$Label.ID.,]
+NonTumor5mc$Type <- "Non-Tumor"
+NonTumor5mc <-  NonTumor5mc[-4,]
+head(NonTumor5mc)
+
+```
+
+
+```{r}
+# visualize 5hmC across subjects without repeats
+ppi = 300
+png("/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/00.052020_wPCNS0602x/6.TotalMedian_5hmC_NoRepeats.png", height=5*ppi, width=10*ppi, res=ppi)
+par(mfrow = c(1,4), mar= c(6,4,4,1)+ .1)
+barplot(Glioma5hmc[,2], names.arg =Glioma5hmc[,1], ylim=c(0,0.075), las=2, col = "steelblue4", ylab = "Median  Glioma 5hmC beta-value", cex.lab = 1.2, space = c(0, 5))
+barplot(Ependymoma5hmc[,2], names.arg = Ependymoma5hmc[,1],  ylim=c(0,0.075), las=2, col = "darkgoldenrod1", ylab = "Median Ependymoma 5hmC beta-value", cex.lab = 1.2, space = c(0, 5))
+barplot(Embryonal5hmc[,2], names.arg = Embryonal5hmc[,1],  ylim=c(0,0.075), las=2, col = "palevioletred1", ylab = "Median Embryonal 5hmC beta-value", cex.lab = 1.2, space = c(0, 5))
+barplot(NonTumor5hmc[,2], names.arg = NonTumor5hmc[,1],  ylim=c(0,0.075), las=2, col = "seagreen", ylab = "Median Non-Tumor 5hmC beta-value",  cex.lab = 1.2, space = c(1.5, 2))
+dev.off()
+```
+
+```{r}
+#Combine all tumor types
+AllMedian <- rbind(Glioma5hmc, Ependymoma5hmc)
+AllMedian <- rbind(AllMedian, Embryonal5hmc)
+AllMedian <- rbind(AllMedian, NonTumor5hmc)
+
+#set factor levels for tumor type
+TumorLevels <- c('Glioma', 'Ependymoma', 'Embryonal', 'Non-Tumor')
+TumorLabels <- c('Glioma', 'Ependymoma', 'Embryonal', 'Non-Tumor')
+AllMedian$Type <- factor(AllMedian$Type, levels=TumorLevels, labels = TumorLabels)
+head(AllMedian)
+
+#Set ID as factor so that it will be ordered by Tumor Type in graph
+AllMedian$ID <- factor(AllMedian$ID,levels= AllMedian$ID)
+
+
+#Geombar method
+ggplot(data=AllMedian, aes(x=factor(ID), y= hydroxy_MD, fill = Type)) +
+    geom_bar(stat="identity", position = "dodge", colour="black")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_x_discrete() +
+  scale_y_continuous(limits = c(0, 0.07))+
+  xlab("Tumor Sample")+
+  ylab("Median 5hmC Level")+ 
+  scale_fill_manual(values=c("steelblue4","darkgoldenrod1", "palevioletred1","seagreen" ))
+
+
+```
+
+```{r}
+# visualize 5hmC across subjects without repeats
+ppi = 300
+png("/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/1.Plots_from_Initial_Probe_selection/2.Total_Meth/TotalMedian_5mC_NoRepeats.png", height=6*ppi, width=10*ppi, res=ppi)
+par(mfrow = c(1,4), mar= c(6,5,4,1)+.1)
+barplot(Glioma5mc[,2], names.arg =Glioma5mc[,1], ylim=c(0,1), las=2, col = "steelblue4", ylab = "Median Glioma 5mC beta-value", cex.lab = 1.2)
+barplot(Ependymoma5mc[,2], names.arg = Ependymoma5mc[,1], ylim=c(0,1), las=2, col = "darkgoldenrod1", ylab = "Median Ependymoma 5mC beta-value", cex.lab = 1.2)
+barplot(Embryonal5mc[,2], names.arg = Embryonal5mc[,1], ylim=c(0,1), las=2, col = "palevioletred1", ylab = "Median Embryonal 5mC beta-value", cex.lab = 1.2)
+barplot(NonTumor5mc[,2], names.arg = NonTumor5mc[,1], ylim=c(0,1), las=2, col = "seagreen", ylab = "Median Non-Tumor 5mC beta-value",  cex.lab = 1.2)
+dev.off()
+```
+
+
+```{r}
+#Combine all tumor types
+AllMedian <- rbind(Glioma5mc, Ependymoma5mc)
+AllMedian <- rbind(AllMedian, Embryonal5mc)
+AllMedian <- rbind(AllMedian, NonTumor5mc)
+head(AllMedian)
+dim(AllMedian)
+
+#set factor levels for tumor type
+TumorLevels <- c('Glioma', 'Ependymoma', 'Embryonal', 'Non-Tumor')
+TumorLabels <- c('Glioma', 'Ependymoma', 'Embryonal', 'Non-Tumor')
+AllMedian$Type <- factor(AllMedian$Type, levels=TumorLevels, labels = TumorLabels)
+
+AllMedian$Label <- c(1:30)
+
+AllMedian$ID <- factor(AllMedian$ID,levels= AllMedian$ID)
+
+#Geombar method
+ggplot( AllMedian, aes(x=Label, y=methly_MD))
+
+ggplot(data=as.data.frame(AllMedian), aes(x=ID, y= methly_MD, fill = Type)) +
+    geom_bar(stat="identity", position = "dodge", colour="black")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_x_discrete() +
+  xlab("Tumor Sample")+
+  ylab("Median 5mC Level")+ 
+  scale_fill_manual(values=c("steelblue4","darkgoldenrod1", "palevioletred1","seagreen" ))
+
+```
+

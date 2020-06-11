@@ -1,0 +1,272 @@
+---
+title: "total_meth_visualization"
+author: "nasim"
+date: "11/19/2019"
+output: html_document
+---
+
+setwd("/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS")
+
+
+
+rm(list = ls())
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(wesanderson)
+library(ggsci)
+
+
+# methylation data 
+load("./Files/01142020_PCNS_MethOxy_GoodProbes.RData")
+targets <- read.csv("./Files/Metadata_complete.csv", stringsAsFactors = FALSE)
+
+
+```{r}
+#Since metadata (targets) has duplicates for BS and OxBS samples, want to subset for just ArrayID used in my betas file
+rownames(targets) <- targets$ArrayID
+targets <- targets[colnames(PCNS_5hmc),]
+
+
+#Change column names in dataframes to patient ID from ArrayID
+colnames(PCNS_5hmc) <- targets$Label.ID.[match(names(PCNS_5hmc),targets$ArrayID)]
+colnames(PCNS_5mc) <- targets$Label.ID.[match(names(PCNS_5mc),targets$ArrayID)]
+
+
+#remove repeat samples from individuals
+#Identify serial samples and multiregional samples (patients with more than one sample)
+serials <- c("PCNS0302X","PCNS0602X", "PCNS0603X")
+
+multiregional <- c("PCNS1001A", "PCNS0301B", "PCNS0301C", "PCNS0601B", "PCNS0901B", "PCNS1901C")
+
+#subset out these samples from analysis
+PCNS_5hmc_noserials <- PCNS_5hmc[,!colnames(PCNS_5hmc) %in% serials]
+PCNS_5hmc_unique <- PCNS_5hmc_noserials[,!colnames(PCNS_5hmc_noserials) %in% multiregional]
+#drop aberrant control
+PCNS_5hmc_unique <- PCNS_5hmc_unique[,-31]
+
+#repeat for mC
+PCNS_5mc_noserials <- PCNS_5mc[,!colnames(PCNS_5mc) %in% serials]
+PCNS_5mc_unique <- PCNS_5mc_noserials[,!colnames(PCNS_5mc_noserials) %in% multiregional]
+PCNS_5mc_unique <- PCNS_5mc_unique[,-31]
+
+```
+
+
+
+```{r}
+# visualize total 5hmC/5mC content across samples 
+#This time ***Remove REPEAT SAMPLES*****
+# Determine the median level of 5hmC/5mC per CpG across all subjects 
+#### hmC
+hydroxy_MD <- apply(PCNS_5hmc_unique, 2, median, na.rm=TRUE)
+ 
+methyl_MD <- apply(PCNS_5mc_unique, 2, median, na.rm=TRUE)
+
+```
+
+
+
+
+```{r}
+#Start subsetting for tumor types and controls
+GliomaSamples <- targets %>% filter(Tumor_Type=="Glioma")
+EpendymomaSamples <- targets %>% filter(Tumor_Type=="Ependymoma")
+EmbryonalSamples <- targets %>% filter(Tumor_Type=="Embryonal")
+NonTumorSamples <- targets %>% filter(Tumor_Type=="Non-Tumor")
+
+#Find sampl
+
+#Combine the dataframes into one with a column annotating tumor type
+hydroxy_MD_df <- as.data.frame(hydroxy_MD) %>% 
+  rownames_to_column(var ="Sample") %>%
+  mutate(Type = ifelse(Sample %in% GliomaSamples$Label.ID., "Glioma", 
+                       ifelse(Sample %in% EpendymomaSamples$Label.ID., "Ependymoma",
+                              ifelse(Sample %in% EmbryonalSamples$Label.ID., "Embryonal",
+                                     ifelse(Sample %in% NonTumorSamples$Label.ID., "Non-Tumor",NA)
+                                     )
+                              )
+                       )) %>%
+  group_by(Type)
+
+
+
+
+```
+
+
+```{r}
+#compare means
+#www.sthda.com/english/articles/24-ggpubr-publication-ready-plots/76-add-p-values-and-significance-levels-to-ggplots/#other-plot-types
+
+hydroxy_MD_df$Type <- as.factor(hydroxy_MD_df$Type)
+compare_means(hydroxy_MD ~ Type, data = hydroxy_MD_df, method = "t.test", paired = FALSE, ref.group = "Non-Tumor")
+
+my_comparisons <- list( c("Non-Tumor", "Glioma"), c("Non-Tumor", "Embryonal"), c("Non-Tumor", "Ependymoma") )
+```
+
+```{r}
+
+# TumorCols = c(`Non-Tumor` = "seagreen", Embryonal= "palevioletred1", Ependymoma="darkgoldenrod1", Glioma= "steelblue4") 
+p <- ggplot(hydroxy_MD_df, aes(x = Type, y = hydroxy_MD, colour=Type, 
+                                       group=paste(Type))) +
+  geom_boxplot(outlier.shape = NA)+
+  geom_point(position=position_jitterdodge(jitter.width = 0.3, dodge.width = 1.0), alpha=0.5) +
+  ggtitle("Median 5-hmC Beta Value of Samples") +
+  theme_classic()+
+  theme(
+        text = element_text(size=16),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(size = 20),
+        legend.text = element_text(size = 16)) +
+  labs(x = "Tumor Class",
+       y = "Median 5-hmC Beta Value") +
+  scale_color_npg()
+#scale_color_manual(values = TumorCols)
+   # scale_y_continuous(limits=c(0,0.6), breaks=seq(0.05,0.6,by=.05))
+
+#Since with adjustment,
+ hmc <- p + stat_compare_means(comparisons = my_comparisons, method = "t.test")
+
+print(hmc)
+
+ggsave(filename= "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/0.052020_wPCNS0601X/1.jitterdodge5hmcMedianNoRPTS052020.png", plot = last_plot(), width = 9, height = 6, dpi = 300, units = "in", device='png')
+  
+#ggsave(filename= "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/00.052020_wPCNS0602x/jitterdodge5hmcMedianNoRPTS052020.png", plot = last_plot(), width = 9, height = 6, dpi = 300, units = "in", device='png')
+         
+```
+
+
+```{r}
+#Combine the dataframes into one with a column annotating tumor type
+methyl_MD_df <- as.data.frame(methyl_MD) %>% 
+  rownames_to_column(var ="Sample") %>%
+  mutate(Type = ifelse(Sample %in% GliomaSamples$Label.ID., "Glioma", 
+                       ifelse(Sample %in% EpendymomaSamples$Label.ID., "Ependymoma",
+                              ifelse(Sample %in% EmbryonalSamples$Label.ID., "Embryonal",
+                                     ifelse(Sample %in% NonTumorSamples$Label.ID., "Non-Tumor",NA)
+                                     ))))%>%
+  group_by(Type)
+
+
+
+methyl_MD_df$Type <- as.factor(methyl_MD_df$Type)
+compare_means(methyl_MD ~ Type, data = methyl_MD_df, method = "t.test", paired = FALSE, ref.group = "Non-Tumor")
+my_comparisons <- list( c("Non-Tumor", "Glioma"), c("Non-Tumor", "Embryonal"), c("Non-Tumor", "Ependymoma") )
+
+```
+
+```{r}
+p <- ggplot(methyl_MD_df, aes(x = Type, y = methyl_MD, colour=Type, 
+                                       group=paste(Type))) +
+  geom_boxplot(outlier.shape=NA)+
+  geom_point(position=position_jitterdodge(jitter.width = 0.3, dodge.width = 1.0), alpha=0.5) +
+  ggtitle("Median 5-mC Beta Value of Samples") +
+  theme_classic()+
+  theme(
+        text = element_text(size=16),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(size = 20),
+        legend.text = element_text(size = 16)) + 
+  labs(x = "Tumor Type",
+       y = "Median 5-mC Beta Value") +
+   scale_color_npg()
+  #scale_y_continuous(limits=c(0,0.6), breaks=seq(0.05,0.6,by=.05))
+
+print(p)
+
+
+ggsave(filename= "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/0.052020_wPCNS0601X/2.jitterdodge5mcMedianNoRPTS052020.png", plot = last_plot(), width = 9, height = 6, dpi = 300, units = "in", device='png')   
+
+# ggsave(filename= "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Plots/00.052020_wPCNS0602x/5.jitterdodge5mcMedianNoRPTS052020.png", plot = last_plot(), width = 9, height = 6, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+#combine ggplots 
+#This doesn't go too well because the scale between 5mC and 5hmC is so different 
+#https://www.datanovia.com/en/lessons/combine-multiple-ggplots-into-a-figure/
+ggarrange(hmc, mc, labels = c("A", "B"), ncol = 2, nrow=1, widths = c(2,2))
+```
+
+```{r}
+# visualize total 5hmC/5mC content across samples 
+# Determine the median level of 5hmC/5mC per CpG across all subjects 
+
+hydroxy_MD <- as.data.frame(hydroxy_MD)
+hydroxy_MD <- rownames_to_column(hydroxy_MD, var = "ID") 
+#### hmC
+
+#create list of 5hmc medians for per tumor type 
+GliomaMedian5hmc <- hydroxy_MD[hydroxy_MD$ID %in% GliomaSamples$Label.ID.,]
+
+#Get total average 5hmC 
+GMed <- median(GliomaMedian5hmc$hydroxy_MD)
+GMed *100 #1.75
+
+EpendymomaMed5hmc <- hydroxy_MD[hydroxy_MD$ID %in% EpendymomaSamples$Label.ID.,]
+EpMean <- median(EpendymomaMed5hmc$hydroxy_MD)
+EpMean *100 #1.76
+
+EmbryonalMed5hmc <- hydroxy_MD[hydroxy_MD$ID %in% EmbryonalSamples$Label.ID.,]
+EmbMed <- median(EmbryonalMed5hmc$hydroxy_MD)
+EmbMed *100 #1.22
+
+NonTumorMed5hmc <- hydroxy_MD[hydroxy_MD$ID %in% NonTumorSamples$Label.ID.,]
+#Drop aberrant non-tumor sample
+CtlMedian <- median(NonTumorMed5hmc$hydroxy_MD)
+CtlMedian *100 #4.81
+# 
+# #Test statistical difference of differences in mean
+# GliomVCtl <- t.test(GliomaAvg5hmc$avg_5hmC, mu = CtlMean) 
+# EmbrVCtl <- t.test(EmbryonalAvg5hmc$avg_5hmC, mu = CtlMean) 
+# EpendVCtl <- t.test(EpendymomaAvg5hmc$avg_5hmC, mu = CtlMean) 
+# #create a list of 5mc averages
+# GliomaAvg5mc <- avg_5mC[avg_5mC$ID %in% GliomaSamples$Label.ID.,]
+# EpendymomaAvg5mc <- avg_5mC[avg_5mC$ID %in% EpendymomaSamples$Label.ID.,]
+# EmbryonalAvg5mc <- avg_5mC[avg_5mC$ID %in% EmbryonalSamples$Label.ID.,]
+# NonTumorAvg5mc <- avg_5mC[avg_5mC$ID %in% NonTumorSamples$Label.ID.,]
+# NonTumorAvg5mc <-  NonTumorAvg5mc[-1,]
+```
+
+```{r}
+# Determine the median level of 5mC per CpG across all subjects 
+
+methyl_MD <- as.data.frame(methyl_MD)
+methyl_MD <- rownames_to_column(methyl_MD, var = "ID") 
+
+#### mC
+#create list of 5mc medians for per tumor type 
+GliomaMedian5mc <- methyl_MD[methyl_MD$ID %in% GliomaSamples$Label.ID.,]
+
+#Get total average 5hmC 
+GMed <- median(GliomaMedian5mc$methyl_MD)
+GMed *100 #62.5%
+
+EpendymomaMed5mc <- methyl_MD[methyl_MD$ID %in% EpendymomaSamples$Label.ID.,]
+EpMed <- median(EpendymomaMed5mc$methyl_MD)
+EpMed *100 #61.5%
+
+EmbryonalMed5mc <- methyl_MD[methyl_MD$ID %in% EmbryonalSamples$Label.ID.,]
+EmbMed <- median(EmbryonalMed5mc$methyl_MD)
+EmbMed *100 #60.5%
+
+NonTumorMed5mc <- methyl_MD[methyl_MD$ID %in% NonTumorSamples$Label.ID.,]
+CtlMedian <- median(NonTumorMed5mc$methyl_MD)
+CtlMedian *100 #60.3
+
+Tumor_Medians <- c(CtlMedian,EmbMed,EpMed,GMed)
+sd(Tumor_Medians) #0.009765382
+
+#Test statistical difference of differences in mean
+GliomVCtl <- t.test(GliomaAvg5hmc$avg_5hmC, mu = CtlMean) 
+EmbrVCtl <- t.test(EmbryonalAvg5hmc$avg_5hmC, mu = CtlMean) 
+EpendVCtl <- t.test(EpendymomaAvg5hmc$avg_5hmC, mu = CtlMean) 
+#create a list of 5mc averages
+GliomaAvg5mc <- avg_5mC[avg_5mC$ID %in% GliomaSamples$Label.ID.,]
+EpendymomaAvg5mc <- avg_5mC[avg_5mC$ID %in% EpendymomaSamples$Label.ID.,]
+EmbryonalAvg5mc <- avg_5mC[avg_5mC$ID %in% EmbryonalSamples$Label.ID.,]
+NonTumorAvg5mc <- avg_5mC[avg_5mC$ID %in% NonTumorSamples$Label.ID.,]
+NonTumorAvg5mc <-  NonTumorAvg5mc[-1,]
+```

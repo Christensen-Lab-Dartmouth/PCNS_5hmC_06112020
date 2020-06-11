@@ -1,0 +1,137 @@
+---
+title: "CNS Pediatric Tumors PCA Clustering For Top 10K Most Variable CpGs"
+author: "Curtis L. Petersen"
+Nasim Edits
+date: "3/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'relative_path_to_root_from_Rmd')
+library(tidyverse)
+library(factoextra)
+library(ggsci)
+
+```
+
+# Load Data
+```{r, warning=FALSE, message=FALSE}
+
+load("../../Files/021520UniqueSamples.RData")
+load("../../Script/9.RPMM/RPMM_TumorMosVar_Script/Tumor_MostVar042020.RData")
+
+Pheno = read_csv("../../Files/Metadata_Complete.csv")
+```
+
+# Wrangle
+```{r}
+# 5hmc
+    MostVar5hmC_betas <- TumorTopVar
+
+```
+
+
+# Define Plot Function
+```{r}
+PCA_Plt <- function(PCA_Data, Grouper, Legend, Title) {
+    Plt = fviz_pca_ind(PCA_Data,
+             axes = c(1,2),
+             geom.ind = "point",
+             col.ind = Grouper,
+             addEllipses = TRUE, 
+             ellipse.type = "confidence",
+             legend.title = Legend,
+             title = Title
+             ) +
+    scale_color_npg()+
+      theme(plot.margin = unit(c(3,1,1,1), "mm"))
+    
+    return(Plt)
+}
+```
+
+
+# Hydroxy
+
+## Get PCA
+```{r}
+pca_MostVar5hmC = prcomp(t(as.matrix(MostVar5hmC_betas)))
+```
+
+## Pheno Data
+```{r}
+Pheno_oxy = Pheno %>%
+    filter(Condition == "OxBS",
+           Label.ID. %in% colnames(MostVar5hmC_betas)) %>%
+    select(X1,Label.ID., GENDER, location_class, Diagnosis_Clean, Tumor_Type, DATE_DEATH, WHO_GRADE) %>%
+    column_to_rownames(var = "X1") %>%
+    mutate(Status = ifelse(DATE_DEATH == "Alive", "Alive", "Dead"),
+           Tumor_Type= ifelse(Tumor_Type == "GLIOMA", "Glioma",
+                              ifelse(Tumor_Type == "EMBRYONAL", "Embryonal", Tumor_Type)))
+
+```
+
+## Check Dimentions
+```{r}
+fviz_eig(pca_MostVar5hmC)
+``` 
+
+## Generate Plot 
+```{r}
+
+pca_MostVar5hmC_plot_tumortype = PCA_Plt(PCA_Data = pca_MostVar5hmC, Grouper = c(Pheno_oxy$Tumor_Type), Legend = "Tumor Type", Title = "")
+pca_MostVar5hmC_plot_tumortype
+
+pca_MostVar5hmC_plot_mortality <- PCA_Plt(PCA_Data = pca_MostVar5hmC, Grouper = Pheno_oxy$Status, Legend = "Mortality", Title = "")
+
+```
+
+Examine to see if this is lost in 5mC
+
+```{r}
+load("../../Files/01142020_PCNS_MethOxy_GoodProbes.RData")
+colnames(PCNS_5mc) <-Pheno$Label.ID.[match(names(PCNS_5mc),Pheno$ArrayID)]
+
+methyl <- PCNS_5mc[row.names(PCNS_5mc) %in% row.names(TumorTopVar), colnames(PCNS_5mc) %in% colnames(TumorTopVar)]
+dim(methyl)
+
+pca_MostVar5mC = prcomp(t(as.matrix(methyl)))
+
+fviz_eig(pca_MostVar5mC)
+
+
+PCA_Plt <- function(PCA_Data, Grouper, Legend, Title) {
+    Plt = fviz_pca_ind(PCA_Data,
+             axes = c(1,2),
+             geom.ind = "point",
+             col.ind = Grouper,
+            # addEllipses = TRUE, 
+             ellipse.type = "confidence",
+             legend.title = Legend,
+             title = Title
+             ) +
+    scale_color_npg()+
+      theme(plot.margin = unit(c(0.0001,1,1,1), "mm"))
+    
+    return(Plt)
+}
+Pheno_oxy <- Pheno_oxy[Pheno_oxy$Label.ID. %in% colnames(TumorTopVar), ]
+pca_MostVar5mC_plot = PCA_Plt(PCA_Data = pca_MostVar5mC, Grouper = Pheno_oxy$Tumor_Type, Legend = "Tumor Type", Title = "")
+pca_MostVar5mC_plot
+
+pca_MostVar5mC_survival <- PCA_Plt(PCA_Data = pca_MostVar5mC, Grouper = Pheno_oxy$Status, Legend = "Tumor Type", Title = "")
+```
+
+# Save
+```{r}
+# Methylated
+    ggsave(plot = pca_MostVar5mC_survival, filename = "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Script/19.PCA_Clustering/TumorMostVar_042020/PCA_TumorTopVar5mc_Survivalplot_042020.jpeg")
+    ggsave(plot = pca_MostVar5mC_plot, filename = "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Script/19.PCA_Clustering/TumorMostVar_042020/PCA_TumorTopVar5mc_TumorTypeplot042020.jpeg")
+
+# 5HMC
+    ggsave(plot = pca_MostVar5hmC_plot_tumortype, filename = "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Script/19.PCA_Clustering/TumorMostVar_042020/PCA_TumorTopVar5hmc_Tumortype042020.jpeg")
+    ggsave(plot = pca_MostVar5hmC_plot_mortality, filename = "/Users/nasimazizgolshani/Dropbox/christensen/PCNS_Analysis/PCNS/Script/19.PCA_Clustering/TumorMostVar_042020/PCA_TumorTopVar5hmc_Survival042020.pdf")
+
+    
+```
